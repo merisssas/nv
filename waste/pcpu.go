@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mampirmasss/B/controller"
+	"github.com/merisssas/nv/controller"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"go.einride.tech/pid"
 	"golang.org/x/crypto/chacha20"

@@ -1,4 +1,4 @@
-module github.com/mampirmasss/B
+module github.com/merisssas/nv
 
 go 1.23.0
 

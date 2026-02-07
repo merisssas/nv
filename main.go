@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mampirmasss/B/controller"
-	"github.com/mampirmasss/B/waste"
+	"github.com/merisssas/nv/controller"
+	"github.com/merisssas/nv/waste"
 )
 
 const Version = "0.2.7-hardened-fix"
