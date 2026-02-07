@@ -9,6 +9,7 @@ NeverIdle is a lightweight utility that keeps an instance busy by wasting CPU, m
 - CPU load targeting with optional auto pause/resume.
 - Memory allocation by absolute GiB or by target usage percentage.
 - Periodic network speed tests to generate bandwidth usage.
+- Baseline profile: dummy web server + CPU bump pattern + memory touch + lightweight network faker.
 - Disk write bursts with configurable size and interval.
 - Graceful shutdown on SIGINT/SIGTERM.
 - Optional process priority tuning.
@@ -99,6 +100,12 @@ When the program starts, it executes each configured worker once so you can veri
 - `-n` **Interval for speed tests** (e.g., `45m`, `2h`).
 - `-t` **Concurrent connections** for the speed test (default `4`).
 
+### Baseline profile
+
+- `-baseline` **Enable baseline workload**: dummy web server, CPU bump pattern, memory touch, and network faker.
+- `-web-addr` **Bind address** for the baseline web server (default `0.0.0.0`).
+- `-web-port` **Port** for the baseline web server (default `8080`).
+
 ### Disk waste
 
 - `-d` **Disk write size in MiB per interval** (e.g., `-d 1024`).
@@ -115,6 +122,12 @@ When the program starts, it executes each configured worker once so you can veri
 
 ```bash
 ./NeverIdle -cp 20 -c 1s -m 2 -n 4h
+```
+
+### Baseline workload (web server + periodic CPU/memory/network)
+
+```bash
+./NeverIdle -baseline
 ```
 
 ### CPU auto pause/resume
