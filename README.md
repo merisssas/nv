@@ -123,7 +123,7 @@ Create a `docker-compose.yml` like this:
 ```yaml
 services:
   neveridle:
-    image: neveridle:latest
+    image: ghcr.io/merisssas/nv:latest
     container_name: neveridle
     restart: unless-stopped
     command: ["-cp", "20", "-c", "1s", "-m", "2", "-n", "4h"]
@@ -140,7 +140,7 @@ Compose example with baseline + dummy web server:
 ```yaml
 services:
   neveridle:
-    image: neveridle:latest
+    image: ghcr.io/merisssas/nv:latest
     container_name: neveridle
     restart: unless-stopped
     ports:
