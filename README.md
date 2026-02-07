@@ -4,6 +4,16 @@
 
 NeverIdle is a lightweight utility that keeps an instance busy by wasting CPU, memory, disk I/O, and/or bandwidth on a schedule. It is intended for environments where idle resources may be reclaimed.
 
+## Advantages
+
+- Combines CPU, memory, disk I/O, and bandwidth waste in one binary for centralized control.
+- Can mimic more “realistic” activity through the baseline profile (dummy web server, CPU bump, memory touch, and network faker).
+- Automatic CPU and memory control with interval + hysteresis to avoid oscillation.
+- Cross-platform support (Linux/macOS/Windows) and runs as a single binary.
+- Process priority options to keep workload in the background without disrupting main services.
+- Disk write bursts to keep storage activity on a schedule.
+- Safe, graceful shutdown when the process stops.
+
 ## Features
 
 - CPU load targeting with optional auto pause/resume.
@@ -63,6 +73,74 @@ sudo docker build --build-arg ARCH=amd64 -t neveridle:latest .
 ```bash
 sudo docker run -d --name neveridle neveridle:latest -cp 20 -c 1s -m 2 -n 4h
 ```
+
+## Docker Tutorial (Build, Run, and Compose)
+
+### 1) Build the image yourself
+
+```bash
+git clone https://github.com/merisssas/nv.git
+cd nv
+
+# ARM (default)
+docker build -t neveridle:latest .
+
+# AMD64
+docker build --build-arg ARCH=amd64 -t neveridle:latest .
+```
+
+### 2) Run the container (docker run)
+
+Simple example:
+
+```bash
+docker run -d --name neveridle \
+  --restart unless-stopped \
+  neveridle:latest -cp 20 -c 1s -m 2 -n 4h
+```
+
+Baseline + dummy web server example:
+
+```bash
+docker run -d --name neveridle \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  neveridle:latest -baseline -web-addr 0.0.0.0 -web-port 8080
+```
+
+### 3) Docker Compose
+
+Create a `docker-compose.yml` like this:
+
+```yaml
+services:
+  neveridle:
+    image: neveridle:latest
+    container_name: neveridle
+    restart: unless-stopped
+    command: ["-cp", "20", "-c", "1s", "-m", "2", "-n", "4h"]
+```
+
+Run:
+
+```bash
+docker compose up -d
+```
+
+Compose example with baseline + dummy web server:
+
+```yaml
+services:
+  neveridle:
+    image: neveridle:latest
+    container_name: neveridle
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    command: ["-baseline", "-web-addr", "0.0.0.0", "-web-port", "8080"]
+```
+
+> Note: network waste uses a speed test, so the container needs internet access.
 
 ## Usage
 
