@@ -2,8 +2,8 @@ package waste
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -33,8 +33,9 @@ func Disk(ctx context.Context, path string, sizeMiB int, interval time.Duration)
 
 	fmt.Printf("[DISK] Starting Disk Waste Worker. Writing %d MiB to %s every %v\n", sizeMiB, path, interval)
 
-	// Buffer data random
+	// Buffer data random (pakai PRNG agar CPU lebih ringan)
 	data := make([]byte, 1024*1024) // 1 MiB chunk
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	// Nama file temporary
 	filePath := filepath.Join(path, "neveridle_waste.tmp")
@@ -92,7 +93,7 @@ func Disk(ctx context.Context, path string, sizeMiB int, interval time.Duration)
 		// 2. Write Data (Loop sesuai sizeMiB)
 		// Kita tulis random data baru setiap chunk agar tidak dikompres oleh filesystem pintar (ZFS/Btrfs)
 		for i := 0; i < writeMiB; i++ {
-			rand.Read(data) // Isi random
+			_, _ = rng.Read(data) // Isi random (best-effort)
 			if _, err := f.Write(data); err != nil {
 				fmt.Printf("[DISK] Error writing data: %v\n", err)
 				break
@@ -102,6 +103,7 @@ func Disk(ctx context.Context, path string, sizeMiB int, interval time.Duration)
 		// 3. Sync (Paksa tulis dari RAM ke Disk Fisik)
 		// Ini kunci agar grafis I/O di dashboard Oracle naik!
 		f.Sync()
+		dropFileCache(f)
 		f.Close()
 
 		// 4. Delete File
