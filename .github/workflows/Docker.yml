@@ -1,12 +1,17 @@
 name: build-and-push-ghcr
 
 on:
-  push:
-    branches: ["main"]
-    tags: ["v*"]
-  pull_request:
-    branches: ["main"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag image yang mau dipush (contoh: latest, v1.0.0, test). Kosong = auto (latest + sha)"
+        required: false
+        default: ""
+      push_latest:
+        description: "Also push :latest"
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
@@ -31,46 +36,40 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Generate tags
+        id: tags
+        shell: bash
+        run: |
+          IMAGE="${REGISTRY}/${IMAGE_NAME}"
+          TAG_INPUT="${{ github.event.inputs.tag }}"
+          PUSH_LATEST="${{ github.event.inputs.push_latest }}"
+          SHA_TAG="sha-${GITHUB_SHA::7}"
 
-      - name: Build (PR - no push)
-        if: github.event_name == 'pull_request'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: false
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          TAGS="${IMAGE}:${SHA_TAG}"
 
-      - name: Build & Push (main/tags)
-        if: github.event_name != 'pull_request'
+          if [ -n "${TAG_INPUT}" ]; then
+            TAGS="${TAGS},${IMAGE}:${TAG_INPUT}"
+          fi
+
+          if [ "${PUSH_LATEST}" = "true" ]; then
+            TAGS="${TAGS},${IMAGE}:latest"
+          fi
+
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push (amd64 + arm64)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
