@@ -38,9 +38,11 @@ func Memory(ctx context.Context, targetGiB int) error {
 
 	// headroom supaya tidak langsung OOM
 	const minHeadroom = 300 * MiB
+	const headroomFraction = 0.20
+	const maxUseFraction = 0.60
 
-	// 64MiB per chunk agar stabil
-	const baseChunk = 64 * MiB
+	// chunk kecil agar spike lebih halus
+	const baseChunk = 16 * MiB
 
 	fmt.Printf("[Memory] Targeting %d GiB Physical RAM (page-touch)\n", targetGiB)
 
@@ -59,9 +61,32 @@ func Memory(ctx context.Context, targetGiB int) error {
 		}
 
 		safeFree, _ := getSafeFreeMemory()
-		if safeFree < minHeadroom {
-			fmt.Printf("[Memory] Stop: safeFree=%.2f MiB < headroom. Held=%.2f GiB\n",
+		headroom := int64(float64(safeFree) * headroomFraction)
+		if headroom < minHeadroom {
+			headroom = minHeadroom
+		}
+
+		if safeFree < headroom {
+			fmt.Printf("[Memory] Stop: safeFree=%.2f MiB < headroom=%.2f MiB. Held=%.2f GiB\n",
 				float64(safeFree)/float64(MiB),
+				float64(headroom)/float64(MiB),
+				float64(held.Load())/float64(GiB),
+			)
+			break
+		}
+
+		// batasi target agar tidak “menghabiskan” free memory
+		maxAllowed := int64(float64(safeFree) * maxUseFraction)
+		if maxAllowed < 0 {
+			maxAllowed = 0
+		}
+		cappedTarget := targetBytes
+		if cappedTarget > maxAllowed {
+			cappedTarget = maxAllowed
+		}
+		if held.Load() >= cappedTarget {
+			fmt.Printf("[Memory] Stop: reached capped target %.2f GiB (held=%.2f GiB)\n",
+				float64(cappedTarget)/float64(GiB),
 				float64(held.Load())/float64(GiB),
 			)
 			break
@@ -69,12 +94,12 @@ func Memory(ctx context.Context, targetGiB int) error {
 
 		chunk := int64(baseChunk)
 
-		remain := targetBytes - held.Load()
+		remain := cappedTarget - held.Load()
 		if chunk > remain {
 			chunk = remain
 		}
 
-		maxAlloc := safeFree - minHeadroom
+		maxAlloc := safeFree - headroom
 		if chunk > maxAlloc {
 			chunk = maxAlloc
 		}
@@ -128,6 +153,7 @@ func keepAlive(ctx context.Context) {
 
 	// jangan sentuh semua buffer tiap tick (CPU bisa tinggi)
 	const buffersPerTick = 2
+	const maxPagesPerBuffer = 64
 
 	var rot int
 	for {
@@ -149,8 +175,12 @@ func keepAlive(ctx context.Context) {
 
 				b := Buffers[i]
 
-				// 🔥 Touch per page (paling “nempel”)
-				for off := 0; off < len(b); off += page {
+				// Touch sebagian page agar tetap “nempel” tanpa membebani CPU
+				stride := len(b) / maxPagesPerBuffer
+				if stride < page {
+					stride = page
+				}
+				for off := 0; off < len(b); off += stride {
 					b[off] ^= 1
 				}
 			}
