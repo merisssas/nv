@@ -146,6 +146,7 @@ Saat program start, setiap worker akan menjalankan satu siklus awal agar kamu bi
 - Target CPU 20–40% (burst pattern)
 - Target memori ~30%
 - Auto pause/resume aktif
+- **Note (EN):** Smart mode only enables CPU + memory. Disk I/O runs only if you pass `-d` (and optionally `-di`/`-path`).
 
 ```bash
 ./NeverIdle -smart
@@ -332,6 +333,30 @@ docker run -d --name neveridle \
   neveridle:latest -smart
 ```
 
+### Contoh Lengkap (Manual → Docker → Compose)
+
+#### Manual (binary langsung)
+
+```bash
+# Smart (CPU + memori)
+./NeverIdle -smart
+
+# Baseline (web + cpu + memory touch + network faker)
+./NeverIdle -baseline
+
+# Custom manual (CPU + mem + network + disk)
+./NeverIdle -cp 25 -c 1s -mp 40 -n 6h -t 4 -d 1024 -di 1h -path /var/tmp
+```
+
+#### Docker run (smart + disk I/O)
+
+```bash
+docker run -d --name neveridle \
+  --restart unless-stopped \
+  -v /var/tmp:/var/tmp \
+  neveridle:latest -smart -d 1024 -di 1h -path /var/tmp
+```
+
 ### Compose
 
 ```yaml
@@ -340,7 +365,9 @@ services:
     image: ghcr.io/merisssas/nv:latest
     container_name: neveridle
     restart: unless-stopped
-    command: ["-smart"]
+    command: ["-smart", "-d", "1024", "-di", "1h", "-path", "/var/tmp"]
+    volumes:
+      - /var/tmp:/var/tmp
 ```
 
 ---

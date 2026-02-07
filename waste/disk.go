@@ -37,7 +37,7 @@ func Disk(ctx context.Context, path string, sizeMiB int, interval time.Duration)
 	data := make([]byte, 1024*1024) // 1 MiB chunk
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	// Nama file temporary
+	// Nama file temporary (tetap, agar bisa rewrite)
 	filePath := filepath.Join(path, "neveridle_waste.tmp")
 
 	for {
@@ -82,10 +82,23 @@ func Disk(ctx context.Context, path string, sizeMiB int, interval time.Duration)
 			continue
 		}
 
-		// 1. Create File
-		f, err := os.Create(filePath)
+		// 1. Open/Create File (rewrite konten tiap interval)
+		f, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, 0o644)
 		if err != nil {
 			fmt.Printf("[DISK] Error creating file: %v\n", err)
+			time.Sleep(interval)
+			continue
+		}
+
+		if err := f.Truncate(0); err != nil {
+			fmt.Printf("[DISK] Error truncating file: %v\n", err)
+			f.Close()
+			time.Sleep(interval)
+			continue
+		}
+		if _, err := f.Seek(0, 0); err != nil {
+			fmt.Printf("[DISK] Error seeking file: %v\n", err)
+			f.Close()
 			time.Sleep(interval)
 			continue
 		}
@@ -106,11 +119,8 @@ func Disk(ctx context.Context, path string, sizeMiB int, interval time.Duration)
 		dropFileCache(f)
 		f.Close()
 
-		// 4. Delete File
-		os.Remove(filePath)
-
 		duration := time.Since(start)
-		fmt.Printf("[DISK] Wrote & Deleted %d MiB in %v. Free=%d MiB. Sleeping...\n", writeMiB, duration, freeMiB)
+		fmt.Printf("[DISK] Rewrote %d MiB in %v. Free=%d MiB. Sleeping...\n", writeMiB, duration, freeMiB)
 
 		// Tidur sesuai interval
 		time.Sleep(interval)
