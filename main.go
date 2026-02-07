@@ -113,7 +113,7 @@ func main() {
 			interval = 1 * time.Second // Default cycle 1 detik agar stabil
 		}
 
-		ratio := 0.20 // Default 20%
+		ratio := 0.35 // Default burst center 35%
 		if *FlagCPUPercent > 0 {
 			ratio = *FlagCPUPercent / 100.0
 		}
@@ -131,14 +131,32 @@ func main() {
 			Ratio:    ratio,
 			Workers:  0, // 0 = Auto detect limit container
 			AutoTune: *FlagAutoMode,
+			BurstMin: 2 * time.Minute,
+			BurstMax: 4 * time.Minute,
+			RestMin:  2 * time.Minute,
+			RestMax:  4 * time.Minute,
+			// Fixed burst range to mimic real web server traffic.
+			BurstRatioMin: 0.30,
+			BurstRatioMax: 0.40,
+			RestRatio:     0.01,
 		}
 
 		if *FlagAutoMode && *FlagCPUPercent > 0 {
-			fmt.Printf("[MAIN] Starting Auto CPU (Cycle: %v, Target: %.2f%%)\n", cfg.Interval, cfg.Ratio*100)
+			fmt.Printf("[MAIN] Starting Auto CPU (Cycle: %v, Burst: %.0f-%.0f%%, Rest: ~%.0f%%)\n",
+				cfg.Interval,
+				cfg.BurstRatioMin*100,
+				cfg.BurstRatioMax*100,
+				cfg.RestRatio*100,
+			)
 			cpuAuto = &cpuAutoController{cfg: cfg}
 			cpuAuto.run(ctx, cfg.Ratio*100, *FlagAutoInterval, *FlagAutoHysteresis)
 		} else {
-			fmt.Printf("[MAIN] Starting CPU Waste (Cycle: %v, Target: %.2f%%)\n", cfg.Interval, cfg.Ratio*100)
+			fmt.Printf("[MAIN] Starting CPU Waste (Cycle: %v, Burst: %.0f-%.0f%%, Rest: ~%.0f%%)\n",
+				cfg.Interval,
+				cfg.BurstRatioMin*100,
+				cfg.BurstRatioMax*100,
+				cfg.RestRatio*100,
+			)
 
 			var err error
 			cpuBurner, err = waste.StartCPU(cfg)

@@ -79,8 +79,9 @@ When the program starts, it executes each configured worker once so you can veri
 
 ### CPU waste
 
-- `-cp` **Target CPU load percent** (e.g., `15` for 15%, `25` for 25%).
-- `-c` **Control cycle interval** (e.g., `1s`, `500ms`). If omitted, defaults to `1s`. When `-cp` is not provided, the default CPU target is 20%.
+- **Burst & Sleep pattern**: CPU usage bursts around **30–40% for a few minutes**, then rests near **0% for a few minutes** to mimic real web traffic.
+- `-cp` **Legacy CPU target percent** (used by auto pause/resume thresholds). The burst pattern no longer holds a strict per-second target.
+- `-c` **Control cycle interval** (e.g., `1s`, `500ms`). If omitted, defaults to `1s`. When `-cp` is not provided, the default CPU target is 35%.
 - `-auto` **Auto pause/resume CPU waste** based on system usage (use with `-cp`).
 - `-auto-interval` **Auto check interval** (default `2s`).
 - `-auto-hyst` **Hysteresis percent** (default `2`) to reduce flapping.

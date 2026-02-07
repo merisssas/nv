@@ -2,9 +2,10 @@ package waste
 
 import (
 	"context"
-	"crypto/rand"
+	crand "crypto/rand"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"runtime"
 	"strings"
@@ -25,11 +26,20 @@ type Burner struct {
 // Config konfigurasi untuk CPU waste.
 type Config struct {
 	Interval time.Duration // Total durasi satu siklus (Busy + Idle)
-	Ratio    float64       // Target penggunaan CPU (0.0 - 1.0)
+	Ratio    float64       // Target penggunaan CPU (0.0 - 1.0) (legacy)
 	Workers  int           // Jumlah worker (0 = otomatis sesuai container)
 	BufSize  int           // Ukuran buffer enkripsi (default 32KB)
 	Batch    int           // Cek waktu setiap N iterasi (default 1024)
-	AutoTune bool          // Sesuaikan beban agar mendekati target total CPU
+	AutoTune bool          // Sesuaikan beban agar mendekati target total CPU (legacy)
+
+	// Burst & Sleep settings
+	BurstMin      time.Duration // Durasi minimum fase burst
+	BurstMax      time.Duration // Durasi maksimum fase burst
+	RestMin       time.Duration // Durasi minimum fase rest
+	RestMax       time.Duration // Durasi maksimum fase rest
+	BurstRatioMin float64       // Rasio minimum burst (0.0 - 1.0)
+	BurstRatioMax float64       // Rasio maksimum burst (0.0 - 1.0)
+	RestRatio     float64       // Rasio rest mendekati 0%
 }
 
 // StartCPU memulai worker CPU waste dengan konfigurasi yang diberikan.
@@ -56,17 +66,74 @@ func StartCPU(cfg Config) (*Burner, error) {
 		}
 	}
 
-	targetRatio := cfg.Ratio
+	burstMinRatio := cfg.BurstRatioMin
+	burstMaxRatio := cfg.BurstRatioMax
+	if burstMinRatio <= 0 && burstMaxRatio <= 0 {
+		burstMinRatio = 0.30
+		burstMaxRatio = 0.40
+	}
+	if burstMinRatio < 0 {
+		burstMinRatio = 0
+	}
+	if burstMaxRatio > 1 {
+		burstMaxRatio = 1
+	}
+	if burstMaxRatio < burstMinRatio {
+		burstMaxRatio = burstMinRatio
+	}
+
+	restRatio := cfg.RestRatio
+	if restRatio < 0 {
+		restRatio = 0
+	}
+	if restRatio == 0 {
+		restRatio = 0.01
+	}
+
+	burstMin := cfg.BurstMin
+	burstMax := cfg.BurstMax
+	if burstMin <= 0 {
+		burstMin = 2 * time.Minute
+	}
+	if burstMax <= 0 {
+		burstMax = 4 * time.Minute
+	}
+	if burstMax < burstMin {
+		burstMax = burstMin
+	}
+
+	restMin := cfg.RestMin
+	restMax := cfg.RestMax
+	if restMin <= 0 {
+		restMin = 2 * time.Minute
+	}
+	if restMax <= 0 {
+		restMax = 4 * time.Minute
+	}
+	if restMax < restMin {
+		restMax = restMin
+	}
+
+	targetRatio := burstMinRatio
 	ratioBits := &atomic.Uint64{}
 	ratioBits.Store(math.Float64bits(targetRatio))
 
-	fmt.Printf("[CPU] Starting %d workers (Target: %.0f%%, AutoTune: %t)\n", workers, targetRatio*100, cfg.AutoTune)
+	fmt.Printf("[CPU] Starting %d workers (Burst: %.0f-%.0f%% for %v-%v, Rest: ~%.0f%% for %v-%v)\n",
+		workers,
+		burstMinRatio*100,
+		burstMaxRatio*100,
+		burstMin,
+		burstMax,
+		restRatio*100,
+		restMin,
+		restMax,
+	)
 
 	// Persiapkan source buffer untuk key & nonce
 	// Setiap worker butuh Key(32) + Nonce(24) yang unik
 	need := workers*(32+24) + cfg.BufSize
 	source := make([]byte, need)
-	if _, err := rand.Read(source); err != nil {
+	if _, err := crand.Read(source); err != nil {
 		return nil, fmt.Errorf("rand.Read failed: %w", err)
 	}
 
@@ -75,46 +142,26 @@ func StartCPU(cfg Config) (*Burner, error) {
 	b.running.Store(true)
 	b.wg.Add(workers)
 
-	if cfg.AutoTune {
-		totalCores := runtime.GOMAXPROCS(0)
-		if totalCores <= 0 {
-			totalCores = runtime.NumCPU()
-		}
-		sample := 500 * time.Millisecond
-		if cfg.Interval < sample {
-			sample = cfg.Interval
-		}
-		if sample <= 0 {
-			sample = 200 * time.Millisecond
-		}
-
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-
-				usage, err := cpuUsage(sample)
-				if err != nil {
-					continue
-				}
-
-				delta := targetRatio - usage
-				if delta < 0 {
-					delta = 0
-				}
-
-				adjusted := delta * float64(totalCores) / float64(workers)
-				if adjusted > 1 {
-					adjusted = 1
-				}
-
-				ratioBits.Store(math.Float64bits(adjusted))
+	go func() {
+		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+		for {
+			burstRatio := randomRatio(rng, burstMinRatio, burstMaxRatio)
+			burstDuration := randomDuration(rng, burstMin, burstMax)
+			ratioBits.Store(math.Float64bits(burstRatio))
+			fmt.Printf("[CPU] Burst phase: target %.0f%% for %v\n", burstRatio*100, burstDuration)
+			if !sleepWithContext(ctx, burstDuration) {
+				return
 			}
-		}()
-	}
+
+			restRatioPhase := randomRatio(rng, 0, restRatio)
+			restDuration := randomDuration(rng, restMin, restMax)
+			ratioBits.Store(math.Float64bits(restRatioPhase))
+			fmt.Printf("[CPU] Rest phase: target %.0f%% for %v\n", restRatioPhase*100, restDuration)
+			if !sleepWithContext(ctx, restDuration) {
+				return
+			}
+		}
+	}()
 
 	for id := 0; id < workers; id++ {
 		// Slice key/nonce unik untuk setiap worker (tanpa overlap)
@@ -206,6 +253,32 @@ func StartCPU(cfg Config) (*Burner, error) {
 	}
 
 	return b, nil
+}
+
+func randomDuration(rng *rand.Rand, min, max time.Duration) time.Duration {
+	if max <= min {
+		return min
+	}
+	delta := max - min
+	return min + time.Duration(rng.Int63n(int64(delta)+1))
+}
+
+func randomRatio(rng *rand.Rand, min, max float64) float64 {
+	if max <= min {
+		return min
+	}
+	return min + rng.Float64()*(max-min)
+}
+
+func sleepWithContext(ctx context.Context, duration time.Duration) bool {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 // Stop menghentikan semua worker dengan rapi.
