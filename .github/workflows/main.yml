@@ -30,7 +30,7 @@ jobs:
             sudo apt-get install -y ripgrep
           fi
 
-      - name: Replace all occurrences
+      - name: Replace occurrences (excluding .github/workflows)
         shell: bash
         run: |
           set -euo pipefail
@@ -40,13 +40,12 @@ jobs:
 
           echo "Searching occurrences of: $FROM"
 
-          # Kumpulkan file yang mengandung FROM, output NUL-separated (aman untuk spasi/newline)
+          # Cari file yang mengandung FROM, tapi JANGAN sentuh .github/workflows/**
           rg -l -0 --hidden --no-mmap \
             --glob '!.git/**' \
+            --glob '!.github/workflows/**' \
             --glob '!vendor/**' \
             --glob '!node_modules/**' \
-            --glob '!**/*.png' --glob '!**/*.jpg' --glob '!**/*.jpeg' --glob '!**/*.gif' --glob '!**/*.webp' \
-            --glob '!**/*.zip' --glob '!**/*.gz'  --glob '!**/*.tgz'  --glob '!**/*.7z'  --glob '!**/*.pdf' \
             "$FROM" . > /tmp/matches || true
 
           if [ ! -s /tmp/matches ]; then
@@ -57,9 +56,7 @@ jobs:
           echo "Replacing in files:"
           tr '\0' '\n' < /tmp/matches
 
-          # Pakai delimiter '|' agar aman dari '/' dalam FROM/TO.
-          # \Q...\E memastikan FROM diperlakukan literal.
-          # (TO tidak perlu \Q karena kita tidak mem-parsingnya sebagai regex, hanya replacement string.)
+          # delimiter '|' aman terhadap '/'
           xargs -0 -a /tmp/matches perl -0777 -i -pe "s|\Q$FROM\E|$TO|g"
 
       - name: Show diff
