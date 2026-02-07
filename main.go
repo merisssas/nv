@@ -32,6 +32,11 @@ var (
 	FlagBaseline               = flag.Bool("baseline", false, "Enable baseline workload (web server + cpu bump + memory touch + network faker)")
 	FlagWebAddr                = flag.String("web-addr", "0.0.0.0", "Address for baseline web server")
 	FlagWebPort                = flag.Int("web-port", 8080, "Port for baseline web server")
+	FlagWebTLS                 = flag.Bool("web-tls", false, "Enable TLS with automatic certificates for baseline web server")
+	FlagWebDomain              = flag.String("web-domain", "", "Domain for TLS certificate (required when -web-tls)")
+	FlagMaintenance            = flag.Bool("maintenance", false, "Enable maintenance scheduler (dynamic compute/network/memory)")
+	FlagHeartbeatURL           = flag.String("heartbeat-url", "", "Optional heartbeat webhook URL (max once per hour)")
+	FlagLockFile               = flag.String("lock-file", "/tmp/neveridle.lock", "Lock file path to prevent multiple instances")
 
 	FlagPriority = flag.Int("p", 0, "Process priority (0=Normal, 19=Lowest)")
 
@@ -53,6 +58,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	releaseLock, err := acquireLock(*FlagLockFile)
+	if err != nil {
+		fmt.Printf("[LOCK] Unable to acquire lock (%s): %v\n", *FlagLockFile, err)
+		return
+	}
+	defer releaseLock()
+
 	// --- 1. Priority Management ---
 	if *FlagPriority != 0 {
 		nothingEnabled = false
@@ -72,7 +84,20 @@ func main() {
 	if *FlagBaseline {
 		nothingEnabled = false
 		addr := fmt.Sprintf("%s:%d", *FlagWebAddr, *FlagWebPort)
-		waste.StartWebServer(ctx, addr)
+		waste.StartWebServer(ctx, waste.WebServerConfig{
+			Addr:      addr,
+			EnableTLS: *FlagWebTLS,
+			Domain:    *FlagWebDomain,
+		})
+		fmt.Println("====================")
+	}
+
+	if *FlagMaintenance {
+		nothingEnabled = false
+		fmt.Println("[MAIN] Starting Maintenance Scheduler (dynamic compute/network/memory)")
+		waste.StartMaintenance(ctx, waste.MaintenanceConfig{
+			HeartbeatURL: *FlagHeartbeatURL,
+		})
 		fmt.Println("====================")
 	}
 

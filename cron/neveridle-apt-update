@@ -1,0 +1,1 @@
+30 3 * * 0 root apt-get update -y >> /var/log/neveridle-apt-update.log 2>&1

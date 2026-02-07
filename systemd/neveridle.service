@@ -1,0 +1,14 @@
+[Unit]
+Description=NeverIdle Maintenance Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/neveridle -maintenance -baseline
+Restart=on-failure
+RestartSec=5s
+Environment=GOMAXPROCS=0
+
+[Install]
+WantedBy=multi-user.target

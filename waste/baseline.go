@@ -2,6 +2,7 @@ package waste
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"math/rand"
@@ -9,13 +10,21 @@ import (
 	"net/http"
 	"runtime"
 	"time"
+
+	"golang.org/x/crypto/acme/autocert"
 )
 
-func StartWebServer(ctx context.Context, addr string) {
+type WebServerConfig struct {
+	Addr      string
+	EnableTLS bool
+	Domain    string
+}
+
+func StartWebServer(ctx context.Context, cfg WebServerConfig) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, "<!doctype html><html><head><title>NeverIdle</title></head><body><h1>NeverIdle</h1><p>Baseline dummy page</p><p>Time: %s</p></body></html>", time.Now().Format(time.RFC3339))
+		fmt.Fprintf(w, "<!doctype html><html><head><title>NeverIdle</title></head><body><h1>System Status: OK</h1><p>Time: %s</p></body></html>", time.Now().Format(time.RFC3339))
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -23,8 +32,24 @@ func StartWebServer(ctx context.Context, addr string) {
 	})
 
 	server := &http.Server{
-		Addr:    addr,
+		Addr:    cfg.Addr,
 		Handler: mux,
+	}
+	var certManager *autocert.Manager
+	if cfg.EnableTLS {
+		if cfg.Domain == "" {
+			fmt.Println("[WEB] TLS enabled but domain is empty; skipping TLS.")
+		} else {
+			certManager = &autocert.Manager{
+				Cache:      autocert.DirCache("certs"),
+				Prompt:     autocert.AcceptTOS,
+				HostPolicy: autocert.HostWhitelist(cfg.Domain),
+			}
+			server.TLSConfig = &tls.Config{
+				GetCertificate: certManager.GetCertificate,
+				MinVersion:     tls.VersionTLS12,
+			}
+		}
 	}
 
 	go func() {
@@ -37,7 +62,18 @@ func StartWebServer(ctx context.Context, addr string) {
 	}()
 
 	go func() {
-		fmt.Printf("[WEB] Starting baseline web server on %s\n", addr)
+		fmt.Printf("[WEB] Starting baseline web server on %s\n", cfg.Addr)
+		if certManager != nil {
+			go func() {
+				if err := http.ListenAndServe(":80", certManager.HTTPHandler(nil)); err != nil {
+					fmt.Println("[WEB] ACME HTTP server error:", err)
+				}
+			}()
+			if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+				fmt.Println("[WEB] Server error:", err)
+			}
+			return
+		}
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			fmt.Println("[WEB] Server error:", err)
 		}
