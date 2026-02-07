@@ -42,6 +42,12 @@ If the maximum waste of 20% of the CPU is `-cp 0.2`. The value range of percenta
 -m enables memory waste, followed by a number in GiB.  
 After startup, the specified amount of memory will be occupied and will not be released until the process is killed.
 
+-mp enables memory auto-tuning by percentage (unit: %).  
+Memory will be released when usage exceeds the target and allocated again when it drops (do not use with `-m`).
+
+-auto enables auto pause/resume for CPU/memory tuning.  
+Use `-auto-interval` (check interval) and `-auto-hyst` (percentage hysteresis) to reduce flapping.
+
 -n enables network(bandwidth) periodic waste, followed by the interval between wastes.  
 Argument format is the same as `-c`. The Ookla Speed Test will be performed periodically (and the results will be output!)
 

@@ -33,8 +33,13 @@ func Memory(ctx context.Context, targetGiB int) error {
 	if targetGiB <= 0 {
 		return errors.New("targetGiB must be > 0")
 	}
+	return MemoryBytes(ctx, int64(targetGiB)*int64(GiB))
+}
 
-	targetBytes := int64(targetGiB) * int64(GiB)
+func MemoryBytes(ctx context.Context, targetBytes int64) error {
+	if targetBytes <= 0 {
+		return errors.New("targetBytes must be > 0")
+	}
 
 	// headroom supaya tidak langsung OOM
 	const minHeadroom = 300 * MiB
@@ -44,7 +49,8 @@ func Memory(ctx context.Context, targetGiB int) error {
 	// chunk kecil agar spike lebih halus
 	const baseChunk = 16 * MiB
 
-	fmt.Printf("[Memory] Targeting %d GiB Physical RAM (page-touch)\n", targetGiB)
+	fmt.Printf("[Memory] Targeting %.2f GiB Physical RAM (page-touch)\n",
+		float64(targetBytes)/float64(GiB))
 
 	// log cgroup setiap 2 detik
 	logTicker := time.NewTicker(2 * time.Second)
@@ -236,6 +242,95 @@ func getHostMemAvailable() (int64, error) {
 		}
 	}
 	return 0, errors.New("no MemAvailable")
+}
+
+func getHostMemTotalAvailable() (int64, int64, error) {
+	f, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+
+	var total int64
+	var available int64
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Text()
+		switch {
+		case strings.HasPrefix(line, "MemTotal:"):
+			fields := strings.Fields(line)
+			kb, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil {
+				return 0, 0, err
+			}
+			total = kb * 1024
+		case strings.HasPrefix(line, "MemAvailable:"):
+			fields := strings.Fields(line)
+			kb, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil {
+				return 0, 0, err
+			}
+			available = kb * 1024
+		}
+		if total > 0 && available > 0 {
+			return total, available, nil
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return 0, 0, err
+	}
+	return 0, 0, errors.New("no MemTotal/MemAvailable")
+}
+
+type MemoryStats struct {
+	UsedBytes  int64
+	TotalBytes int64
+	Source     string
+}
+
+func MemoryUsage() (MemoryStats, error) {
+	base, err := getSelfCgroupBase()
+	if err == nil {
+		usageRaw, err := os.ReadFile(base + "/memory.current")
+		if err == nil {
+			maxRaw, err := os.ReadFile(base + "/memory.max")
+			if err == nil {
+				usage, err := strconv.ParseInt(strings.TrimSpace(string(usageRaw)), 10, 64)
+				if err != nil {
+					return MemoryStats{}, err
+				}
+
+				maxStr := strings.TrimSpace(string(maxRaw))
+				if maxStr != "max" {
+					limit, err := strconv.ParseInt(maxStr, 10, 64)
+					if err != nil {
+						return MemoryStats{}, err
+					}
+					if limit > 0 {
+						return MemoryStats{
+							UsedBytes:  usage,
+							TotalBytes: limit,
+							Source:     "cgroup",
+						}, nil
+					}
+				}
+			}
+		}
+	}
+
+	total, available, err := getHostMemTotalAvailable()
+	if err != nil {
+		return MemoryStats{}, err
+	}
+	used := total - available
+	if used < 0 {
+		used = 0
+	}
+	return MemoryStats{
+		UsedBytes:  used,
+		TotalBytes: total,
+		Source:     "host",
+	}, nil
 }
 
 // cgroup v2: ambil base dari /proc/self/cgroup (FIX untuk docker scope)

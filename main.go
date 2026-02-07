@@ -21,6 +21,11 @@ var (
 	FlagCPUPercent = flag.Float64("cp", 0, "Target CPU load percent (e.g. 15-25)")
 	FlagCPU        = flag.Duration("c", 0, "Control cycle interval (e.g. 1s). Used with -cp")
 	FlagMemory     = flag.Int("m", 0, "GiB of memory waste (e.g. 6)")
+	FlagMemoryPct  = flag.Float64("mp", 0, "Target memory usage percent (e.g. 20)")
+
+	FlagAutoInterval   = flag.Duration("auto-interval", 2*time.Second, "Interval for auto resource checks")
+	FlagAutoHysteresis = flag.Float64("auto-hyst", 2, "Auto pause/resume hysteresis percent")
+	FlagAutoMode       = flag.Bool("auto", false, "Auto pause/resume CPU/Memory waste based on thresholds")
 
 	FlagNetwork                = flag.Duration("n", 0, "Interval for network speed test (e.g. 45m)")
 	FlagNetworkConnectionCount = flag.Int("t", 4, "Concurrent connections for speedtest")
@@ -61,7 +66,27 @@ func main() {
 	}
 
 	// --- 2. Memory Waste (PERBAIKAN DI SINI) ---
-	if *FlagMemory > 0 {
+	var memAuto *memoryAutoController
+	if *FlagMemory > 0 && *FlagMemoryPct > 0 {
+		fmt.Println("[MAIN] Error: -m and -mp cannot be used together.")
+		return
+	}
+
+	if *FlagMemoryPct > 0 {
+		nothingEnabled = false
+		target := *FlagMemoryPct
+		if target < 0 {
+			target = 0
+		}
+		if target > 100 {
+			target = 100
+		}
+
+		fmt.Printf("[MAIN] Starting Auto Memory (Target: %.2f%%)\n", target)
+		memAuto = &memoryAutoController{}
+		memAuto.run(ctx, target, *FlagAutoInterval, *FlagAutoHysteresis)
+		fmt.Println("====================")
+	} else if *FlagMemory > 0 {
 		nothingEnabled = false
 		fmt.Printf("[MAIN] Starting Memory Waste: %d GiB\n", *FlagMemory)
 
@@ -79,6 +104,7 @@ func main() {
 
 	// --- 3. CPU Waste (Managed) ---
 	var cpuBurner *waste.Burner // Simpan reference untuk distop nanti
+	var cpuAuto *cpuAutoController
 
 	if *FlagCPU != 0 || *FlagCPUPercent > 0 {
 		nothingEnabled = false
@@ -104,14 +130,21 @@ func main() {
 			Interval: interval,
 			Ratio:    ratio,
 			Workers:  0, // 0 = Auto detect limit container
+			AutoTune: *FlagAutoMode,
 		}
 
-		fmt.Printf("[MAIN] Starting CPU Waste (Cycle: %v, Target: %.2f%%)\n", cfg.Interval, cfg.Ratio*100)
+		if *FlagAutoMode && *FlagCPUPercent > 0 {
+			fmt.Printf("[MAIN] Starting Auto CPU (Cycle: %v, Target: %.2f%%)\n", cfg.Interval, cfg.Ratio*100)
+			cpuAuto = &cpuAutoController{cfg: cfg}
+			cpuAuto.run(ctx, cfg.Ratio*100, *FlagAutoInterval, *FlagAutoHysteresis)
+		} else {
+			fmt.Printf("[MAIN] Starting CPU Waste (Cycle: %v, Target: %.2f%%)\n", cfg.Interval, cfg.Ratio*100)
 
-		var err error
-		cpuBurner, err = waste.StartCPU(cfg)
-		if err != nil {
-			fmt.Printf("[MAIN] Error starting CPU waste: %v\n", err)
+			var err error
+			cpuBurner, err = waste.StartCPU(cfg)
+			if err != nil {
+				fmt.Printf("[MAIN] Error starting CPU waste: %v\n", err)
+			}
 		}
 		fmt.Println("====================")
 	}
@@ -157,6 +190,14 @@ func main() {
 	if cpuBurner != nil {
 		fmt.Print("[MAIN] Stopping CPU Burner... ")
 		cpuBurner.Stop()
+	}
+	if cpuAuto != nil {
+		fmt.Print("[MAIN] Stopping Auto CPU... ")
+		cpuAuto.Stop()
+	}
+	if memAuto != nil {
+		fmt.Print("[MAIN] Stopping Auto Memory... ")
+		memAuto.Stop()
 	}
 
 	fmt.Println("[MAIN] Goodbye.")

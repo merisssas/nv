@@ -279,6 +279,11 @@ func cpuUsage(sample time.Duration) (float64, error) {
 	return usage, nil
 }
 
+// CPUUsage mengukur penggunaan CPU aktual (0.0 - 1.0) dalam interval sample.
+func CPUUsage(sample time.Duration) (float64, error) {
+	return cpuUsage(sample)
+}
+
 // Wrapper lama untuk kompatibilitas dengan main.go (Interval Mode)
 func CPU(interval time.Duration) {
 	// Default: 20% Load (Busy 20ms, Idle 80ms jika interval 100ms)
