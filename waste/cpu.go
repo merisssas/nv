@@ -4,7 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"math"
+	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,6 +29,7 @@ type Config struct {
 	Workers  int           // Jumlah worker (0 = otomatis sesuai container)
 	BufSize  int           // Ukuran buffer enkripsi (default 32KB)
 	Batch    int           // Cek waktu setiap N iterasi (default 1024)
+	AutoTune bool          // Sesuaikan beban agar mendekati target total CPU
 }
 
 // StartCPU memulai worker CPU waste dengan konfigurasi yang diberikan.
@@ -43,10 +47,6 @@ func StartCPU(cfg Config) (*Burner, error) {
 		cfg.Batch = 1024 // Batch besar = overhead minim
 	}
 
-	// Hitung durasi Busy dan Idle berdasarkan rasio
-	busyDuration := time.Duration(float64(cfg.Interval) * cfg.Ratio)
-	idleDuration := cfg.Interval - busyDuration
-
 	workers := cfg.Workers
 	if workers <= 0 {
 		// Gunakan GOMAXPROCS(0) untuk menghormati limit container (Docker/K8s)
@@ -56,7 +56,11 @@ func StartCPU(cfg Config) (*Burner, error) {
 		}
 	}
 
-	fmt.Printf("[CPU] Starting %d workers (Busy: %v, Idle: %v)\n", workers, busyDuration, idleDuration)
+	targetRatio := cfg.Ratio
+	ratioBits := &atomic.Uint64{}
+	ratioBits.Store(math.Float64bits(targetRatio))
+
+	fmt.Printf("[CPU] Starting %d workers (Target: %.0f%%, AutoTune: %t)\n", workers, targetRatio*100, cfg.AutoTune)
 
 	// Persiapkan source buffer untuk key & nonce
 	// Setiap worker butuh Key(32) + Nonce(24) yang unik
@@ -70,6 +74,47 @@ func StartCPU(cfg Config) (*Burner, error) {
 	b := &Burner{cancel: cancel}
 	b.running.Store(true)
 	b.wg.Add(workers)
+
+	if cfg.AutoTune {
+		totalCores := runtime.GOMAXPROCS(0)
+		if totalCores <= 0 {
+			totalCores = runtime.NumCPU()
+		}
+		sample := 500 * time.Millisecond
+		if cfg.Interval < sample {
+			sample = cfg.Interval
+		}
+		if sample <= 0 {
+			sample = 200 * time.Millisecond
+		}
+
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				usage, err := cpuUsage(sample)
+				if err != nil {
+					continue
+				}
+
+				delta := targetRatio - usage
+				if delta < 0 {
+					delta = 0
+				}
+
+				adjusted := delta * float64(totalCores) / float64(workers)
+				if adjusted > 1 {
+					adjusted = 1
+				}
+
+				ratioBits.Store(math.Float64bits(adjusted))
+			}
+		}()
+	}
 
 	for id := 0; id < workers; id++ {
 		// Slice key/nonce unik untuk setiap worker (tanpa overlap)
@@ -101,6 +146,19 @@ func StartCPU(cfg Config) (*Burner, error) {
 				case <-ctx.Done():
 					return
 				default:
+				}
+
+				ratio := math.Float64frombits(ratioBits.Load())
+				if ratio < 0 {
+					ratio = 0
+				} else if ratio > 1 {
+					ratio = 1
+				}
+
+				busyDuration := time.Duration(float64(cfg.Interval) * ratio)
+				idleDuration := cfg.Interval - busyDuration
+				if idleDuration < 0 {
+					idleDuration = 0
 				}
 
 				// --- BUSY PHASE ---
@@ -157,10 +215,68 @@ func (b *Burner) Stop() {
 	}
 	// Pastikan hanya dipanggil sekali
 	if b.running.CompareAndSwap(true, false) {
-		b.cancel()    // Kirim sinyal cancel ke context
-		b.wg.Wait()   // Tunggu semua goroutine worker selesai
+		b.cancel()  // Kirim sinyal cancel ke context
+		b.wg.Wait() // Tunggu semua goroutine worker selesai
 		fmt.Println("[CPU] Workers stopped.")
 	}
+}
+
+type cpuStat struct {
+	idle  uint64
+	total uint64
+}
+
+func readCPUStat() (cpuStat, error) {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return cpuStat{}, err
+	}
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 {
+		return cpuStat{}, fmt.Errorf("empty /proc/stat")
+	}
+	fields := strings.Fields(lines[0])
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return cpuStat{}, fmt.Errorf("unexpected /proc/stat format")
+	}
+
+	var total uint64
+	var idle uint64
+	for i := 1; i < len(fields); i++ {
+		var v uint64
+		if _, err := fmt.Sscanf(fields[i], "%d", &v); err != nil {
+			return cpuStat{}, err
+		}
+		total += v
+		if i == 4 || i == 5 { // idle + iowait
+			idle += v
+		}
+	}
+	return cpuStat{idle: idle, total: total}, nil
+}
+
+func cpuUsage(sample time.Duration) (float64, error) {
+	s1, err := readCPUStat()
+	if err != nil {
+		return 0, err
+	}
+	time.Sleep(sample)
+	s2, err := readCPUStat()
+	if err != nil {
+		return 0, err
+	}
+	deltaTotal := s2.total - s1.total
+	deltaIdle := s2.idle - s1.idle
+	if deltaTotal == 0 {
+		return 0, fmt.Errorf("zero total delta")
+	}
+	usage := 1 - float64(deltaIdle)/float64(deltaTotal)
+	if usage < 0 {
+		usage = 0
+	} else if usage > 1 {
+		usage = 1
+	}
+	return usage, nil
 }
 
 // Wrapper lama untuk kompatibilitas dengan main.go (Interval Mode)
@@ -169,27 +285,28 @@ func CPU(interval time.Duration) {
 	// Namun karena func CPU() lama menerima interval sebagai "jeda tidur",
 	// kita asumsikan interval adalah waktu IDLE.
 	// Kita set waktu BUSY statis misal 50ms untuk memberikan beban.
-	
+
 	// Agar lebih fleksibel, kita pakai mode rasio 20%
 	// Total siklus = interval * 5 (Contoh: Interval 100ms -> Siklus 500ms -> Busy 100ms)
 	// Ini estimasi kasar untuk backward compatibility.
-	
+
 	// Tapi lebih baik kita set rasio fix 20% dengan interval 1 detik agar stabil.
 	cfg := Config{
 		Interval: 1 * time.Second,
-		Ratio:    0.20, // 20% CPU
+		Ratio:    0.20, // Target total CPU
 		Workers:  0,    // Auto
+		AutoTune: true,
 	}
-	
+
 	burner, err := StartCPU(cfg)
 	if err != nil {
 		fmt.Println("[CPU] Error starting:", err)
 		return
 	}
-	
+
 	// Block forever karena fungsi CPU() lama diharapkan blocking
 	select {}
-	
+
 	// Unreachable in this context, but good practice
-	burner.Stop() 
+	burner.Stop()
 }
