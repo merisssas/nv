@@ -1,0 +1,75 @@
+name: Replace module path mampirmasss/B -> merisssas/nv
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+  # Opsional: jalan tiap minggu untuk memastikan tidak ada yang balik lagi
+  # schedule:
+  #   - cron: "0 3 * * 1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: replace-module-path
+  cancel-in-progress: false
+
+jobs:
+  replace:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Replace all occurrences
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          FROM='github.com/mampirmasss/B'
+          TO='github.com/merisssas/nv'
+
+          echo "Searching occurrences of: $FROM"
+          if ! command -v rg >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y ripgrep
+          fi
+
+          # Cari file text yang mengandung FROM (hindari .git, vendor, node_modules, binary)
+          mapfile -t FILES < <(
+            rg -l --hidden --no-mmap --glob '!.git/**' --glob '!vendor/**' --glob '!node_modules/**' "$FROM" .
+          )
+
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No matches found. Nothing to do."
+            exit 0
+          fi
+
+          echo "Found ${#FILES[@]} file(s). Replacing..."
+          # Replace in-place dengan perl (lebih aman dari perbedaan sed GNU/BSD)
+          perl -0777 -i -pe "s/\Q$FROM\E/$TO/g" "${FILES[@]}"
+
+      - name: Show diff
+        shell: bash
+        run: |
+          git status --porcelain
+          git --no-pager diff
+
+      - name: Commit & push if changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git commit -m "chore: replace module path mampirmasss/B -> merisssas/nv"
+          git push
