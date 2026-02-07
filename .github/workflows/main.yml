@@ -1,0 +1,99 @@
+name: Auto-fix go.mod and go.sum
+
+on:
+  pull_request:
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: go-mod-autofix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tidy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # pakai versi dari go.mod; kalau repo kamu belum pakai toolchain directive,
+          # tetap aman.
+          go-version-file: go.mod
+          cache: true
+
+      - name: Show Go env
+        run: |
+          go version
+          go env GOPATH GOMOD GOMODCACHE
+
+      # (Opsional tapi recommended) pastikan module download konsisten
+      - name: Download modules
+        run: go mod download
+
+      # Inti: rapikan & sinkronkan dependency
+      - name: Tidy modules
+        env:
+          # Tambahkan build tags kalau kamu pakai.
+          # Contoh: TAGS: "prod,oracle,netgo"
+          TAGS: ""
+        run: |
+          set -euxo pipefail
+
+          if [ -n "${TAGS}" ]; then
+            go mod tidy -v -tags="${TAGS}"
+          else
+            go mod tidy -v
+          fi
+
+          # Verifikasi sum konsisten (lebih ketat)
+          go mod verify
+
+      - name: Check if changes exist
+        id: diff
+        run: |
+          set -euxo pipefail
+          if git diff --quiet -- go.mod go.sum; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Commit & push balik:
+      # - Untuk PR: push ke branch PR (butuh permission contents:write)
+      # - Untuk push main: commit langsung ke main (kalau kamu mau)
+      - name: Commit changes
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add go.mod go.sum
+          git commit -m "chore(mod): tidy go.mod/go.sum"
+
+      - name: Push changes
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          # Push balik ke ref yang memicu workflow
+          git push
