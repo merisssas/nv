@@ -29,6 +29,9 @@ var (
 
 	FlagNetwork                = flag.Duration("n", 0, "Interval for network speed test (e.g. 45m)")
 	FlagNetworkConnectionCount = flag.Int("t", 4, "Concurrent connections for speedtest")
+	FlagBaseline               = flag.Bool("baseline", false, "Enable baseline workload (web server + cpu bump + memory touch + network faker)")
+	FlagWebAddr                = flag.String("web-addr", "0.0.0.0", "Address for baseline web server")
+	FlagWebPort                = flag.Int("web-port", 8080, "Port for baseline web server")
 
 	FlagPriority = flag.Int("p", 0, "Process priority (0=Normal, 19=Lowest)")
 
@@ -62,6 +65,14 @@ func main() {
 				fmt.Println("[PRIORITY] Warning: Failed to set priority:", err)
 			}
 		}
+		fmt.Println("====================")
+	}
+
+	// --- 1b. Baseline Web Server ---
+	if *FlagBaseline {
+		nothingEnabled = false
+		addr := fmt.Sprintf("%s:%d", *FlagWebAddr, *FlagWebPort)
+		waste.StartWebServer(ctx, addr)
 		fmt.Println("====================")
 	}
 
@@ -102,9 +113,17 @@ func main() {
 		fmt.Println("====================")
 	}
 
+	if *FlagBaseline && *FlagMemory == 0 && *FlagMemoryPct == 0 {
+		nothingEnabled = false
+		fmt.Println("[MAIN] Starting Baseline Memory Touch (300-800 MiB every 5-15m)")
+		go waste.MemoryBurst(ctx, 300, 800, 5*time.Minute, 15*time.Minute)
+		fmt.Println("====================")
+	}
+
 	// --- 3. CPU Waste (Managed) ---
 	var cpuBurner *waste.Burner // Simpan reference untuk distop nanti
 	var cpuAuto *cpuAutoController
+	var cpuBaseline *waste.Burner
 
 	if *FlagCPU != 0 || *FlagCPUPercent > 0 {
 		nothingEnabled = false
@@ -167,11 +186,55 @@ func main() {
 		fmt.Println("====================")
 	}
 
+	if *FlagBaseline && *FlagCPU == 0 && *FlagCPUPercent == 0 && !*FlagAutoMode {
+		nothingEnabled = false
+		cfg := waste.PatternConfig{
+			Interval: 1 * time.Second,
+			Phases: []waste.Phase{
+				{
+					Name:        "burst",
+					DurationMin: 90 * time.Second,
+					DurationMax: 180 * time.Second,
+					RatioMin:    0.40,
+					RatioMax:    0.70,
+				},
+				{
+					Name:        "cooldown",
+					DurationMin: 3 * time.Minute,
+					DurationMax: 10 * time.Minute,
+					RatioMin:    0.01,
+					RatioMax:    0.05,
+				},
+				{
+					Name:        "idle",
+					DurationMin: 5 * time.Minute,
+					DurationMax: 15 * time.Minute,
+					RatioMin:    0.005,
+					RatioMax:    0.03,
+				},
+			},
+		}
+		fmt.Println("[MAIN] Starting Baseline CPU bump pattern (40-70% for 90-180s; <5% cooldown/idle)")
+		var err error
+		cpuBaseline, err = waste.StartCPUPattern(cfg)
+		if err != nil {
+			fmt.Printf("[MAIN] Error starting baseline CPU pattern: %v\n", err)
+		}
+		fmt.Println("====================")
+	}
+
 	// --- 4. Network Waste ---
 	if *FlagNetwork != 0 {
 		nothingEnabled = false
 		fmt.Printf("[MAIN] Starting Network Waste every %v (conns=%d)\n", *FlagNetwork, *FlagNetworkConnectionCount)
 		go waste.Network(ctx, *FlagNetwork, *FlagNetworkConnectionCount)
+		fmt.Println("====================")
+	}
+
+	if *FlagBaseline && *FlagNetwork == 0 {
+		nothingEnabled = false
+		fmt.Println("[MAIN] Starting Baseline Network Faker (2-12m, 3-7 domains)")
+		go waste.NetworkFaker(ctx, 2*time.Minute, 12*time.Minute, 3, 7)
 		fmt.Println("====================")
 	}
 
@@ -212,6 +275,10 @@ func main() {
 	if cpuAuto != nil {
 		fmt.Print("[MAIN] Stopping Auto CPU... ")
 		cpuAuto.Stop()
+	}
+	if cpuBaseline != nil {
+		fmt.Print("[MAIN] Stopping Baseline CPU... ")
+		cpuBaseline.Stop()
 	}
 	if memAuto != nil {
 		fmt.Print("[MAIN] Stopping Auto Memory... ")
