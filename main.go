@@ -26,6 +26,7 @@ var (
 	FlagAutoInterval   = flag.Duration("auto-interval", 2*time.Second, "Interval for auto resource checks")
 	FlagAutoHysteresis = flag.Float64("auto-hyst", 2, "Auto pause/resume hysteresis percent")
 	FlagAutoMode       = flag.Bool("auto", false, "Auto pause/resume CPU/Memory waste based on thresholds")
+	FlagSmart          = flag.Bool("smart", false, "Enable smart auto profile (20-40% CPU & memory target) + show system specs")
 
 	FlagNetwork                = flag.Duration("n", 0, "Interval for network speed test (e.g. 45m)")
 	FlagNetworkConnectionCount = flag.Int("t", 4, "Concurrent connections for speedtest")
@@ -45,6 +46,36 @@ var (
 	FlagDiskPath     = flag.String("path", ".", "Directory for disk waste (default: current dir)")
 )
 
+func printSystemSpecs() {
+	fmt.Println("[SMART] Detecting system specs...")
+	fmt.Printf("[SMART] CPUs: logical=%d, GOMAXPROCS=%d\n", runtime.NumCPU(), runtime.GOMAXPROCS(0))
+	stats, err := waste.MemoryUsage()
+	if err != nil {
+		fmt.Printf("[SMART] Memory: unable to detect (%v)\n", err)
+		return
+	}
+	fmt.Printf("[SMART] Memory (%s): total=%.2f GiB, used=%.2f GiB\n",
+		stats.Source,
+		float64(stats.TotalBytes)/float64(waste.GiB),
+		float64(stats.UsedBytes)/float64(waste.GiB),
+	)
+}
+
+func applySmartDefaults() {
+	if *FlagCPUPercent == 0 {
+		*FlagCPUPercent = 30
+	}
+	if *FlagCPU == 0 {
+		*FlagCPU = 1 * time.Second
+	}
+	if *FlagMemory == 0 && *FlagMemoryPct == 0 {
+		*FlagMemoryPct = 30
+	}
+	if !*FlagAutoMode {
+		*FlagAutoMode = true
+	}
+}
+
 func main() {
 	fmt.Println("NeverIdle", Version, "| Oracle Cloud Ampere Edition")
 	fmt.Println("Platform:", runtime.GOOS, "/", runtime.GOARCH, "| Go:", runtime.Version())
@@ -53,6 +84,12 @@ func main() {
 
 	flag.Parse()
 	nothingEnabled := true
+
+	if *FlagSmart {
+		printSystemSpecs()
+		applySmartDefaults()
+		fmt.Println("====================")
+	}
 
 	// Setup Context untuk Graceful Shutdown (Ctrl+C / Docker Stop)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -183,6 +220,12 @@ func main() {
 			BurstRatioMin: 0.30,
 			BurstRatioMax: 0.40,
 			RestRatio:     0.01,
+		}
+
+		if *FlagSmart {
+			cfg.BurstRatioMin = 0.20
+			cfg.BurstRatioMax = 0.40
+			cfg.RestRatio = 0.02
 		}
 
 		if *FlagAutoMode && *FlagCPUPercent > 0 {
