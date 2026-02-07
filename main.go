@@ -120,7 +120,7 @@ func main() {
 	if *FlagNetwork != 0 {
 		nothingEnabled = false
 		fmt.Printf("[MAIN] Starting Network Waste every %v (conns=%d)\n", *FlagNetwork, *FlagNetworkConnectionCount)
-		go waste.Network(*FlagNetwork, *FlagNetworkConnectionCount)
+		go waste.Network(ctx, *FlagNetwork, *FlagNetworkConnectionCount)
 		fmt.Println("====================")
 	}
 
@@ -136,7 +136,7 @@ func main() {
 		dir := *FlagDiskPath
 
 		fmt.Printf("[MAIN] Starting Disk Waste: %d MiB every %v (Path: %s)\n", *FlagDiskSize, interval, dir)
-		go waste.Disk(dir, *FlagDiskSize, interval)
+		go waste.Disk(ctx, dir, *FlagDiskSize, interval)
 		fmt.Println("====================")
 	}
 
