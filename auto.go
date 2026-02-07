@@ -92,6 +92,7 @@ type memoryAutoController struct {
 	mu      sync.Mutex
 	cancel  context.CancelFunc
 	running bool
+	gen     int
 }
 
 func (m *memoryAutoController) run(ctx context.Context, targetPercent float64, interval time.Duration, hysteresis float64) {
@@ -153,6 +154,8 @@ func (m *memoryAutoController) start(ctx context.Context, targetBytes int64) {
 		m.mu.Unlock()
 		return
 	}
+	m.gen++
+	gen := m.gen
 	memCtx, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
 	m.running = true
@@ -163,20 +166,21 @@ func (m *memoryAutoController) start(ctx context.Context, targetBytes int64) {
 			fmt.Printf("[AUTO][MEM] Error: %v\n", err)
 		}
 		m.mu.Lock()
-		if m.cancel == cancel {
+		if m.gen == gen {
 			m.cancel = nil
+			m.running = false
 		}
-		m.running = false
 		m.mu.Unlock()
 	}()
 }
 
 func (m *memoryAutoController) Stop() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.cancel != nil {
 		m.cancel()
 		m.cancel = nil
 	}
 	m.running = false
+	m.gen++
+	m.mu.Unlock()
 }
