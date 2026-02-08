@@ -26,4 +26,3 @@ COPY --from=builder /app/neveridle .
 ENV TZ=Europe/Berlin
 
 ENTRYPOINT ["./neveridle"]
-CMD ["-cp", "15", "-m", "1", "-n", "1h"]

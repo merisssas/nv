@@ -1,78 +1,78 @@
-# NeverIdle — Prestige Waster for Always-Active VPS
+# NeverIdle — Prestige Workload Generator for Always-Active VPS
 
 **Repository:** https://github.com/merisssas/nv
 
-NeverIdle adalah utilitas ringan untuk menjaga VM/VPS tetap aktif dengan pola beban CPU, memori, disk I/O, dan bandwidth yang bisa diatur. Cocok untuk environment yang berisiko di-reclaim saat idle, atau untuk mempertahankan “activity footprint” yang terlihat natural.
+NeverIdle is a lightweight utility that keeps VMs/VPS instances active using controlled CPU, memory, disk I/O, and network patterns. It is designed for environments at risk of being reclaimed due to idleness and for maintaining a realistic “activity footprint” without interfering with primary workloads.
 
-> **Tagline:** _Prestige waster_ — stabil, terukur, dan fleksibel di semua kelas mesin.
+> **Tagline:** _Prestige waster_ — stable, measured, and flexible across all machine sizes.
 
 ---
 
-## Daftar Isi
+## Table of Contents
 
-- [Ringkasan](#ringkasan)
-- [Kelebihan Utama](#kelebihan-utama)
-- [Fitur Utama](#fitur-utama)
+- [Overview](#overview)
+- [Key Advantages](#key-advantages)
+- [Core Features](#core-features)
 - [Quick Start](#quick-start)
-- [Matriks Fitur](#matriks-fitur)
-- [Instalasi](#instalasi)
-- [Cara Pakai](#cara-pakai)
-- [Profil & Preset](#profil--preset)
-- [Konfigurasi Lengkap (Flags)](#konfigurasi-lengkap-flags)
-- [Tutorial Lengkap](#tutorial-lengkap)
+- [Feature Matrix](#feature-matrix)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Profiles & Presets](#profiles--presets)
+- [Configuration (Flags)](#configuration-flags)
+- [Full Tutorial](#full-tutorial)
 - [Docker (Build, Run, Compose)](#docker-build-run-compose)
-- [Praktik Terbaik](#praktik-terbaik)
+- [Best Practices](#best-practices)
 - [Troubleshooting](#troubleshooting)
-- [Keamanan & Catatan Penting](#keamanan--catatan-penting)
+- [Security & Notes](#security--notes)
 
 ---
 
-## Ringkasan
+## Overview
 
-NeverIdle menggabungkan CPU burner, memory allocator, disk writer, dan network activity dalam satu binary lintas platform (Linux/macOS/Windows). Ia bisa berperilaku “realistic” melalui **Baseline Profile** atau **Smart Profile** yang adaptif terhadap kemampuan mesin. Semua worker berjalan aman dengan graceful shutdown, lock file, dan opsi prioritas agar beban tidak mengganggu layanan utama.
-
----
-
-## Kelebihan Utama
-
-- **All-in-one**: CPU, memori, disk, dan bandwidth dalam satu binary.
-- **Adaptif**: auto pause/resume dengan hysteresis untuk CPU/memori.
-- **Realistic**: baseline profile dengan pola traffic & memory touch natural.
-- **Aman**: graceful shutdown, lock file, dan batas cgroup-aware.
-- **Portabel**: bisa dijalankan di Linux/macOS/Windows.
-- **Operasional**: cocok untuk VM/VPS kecil sampai besar.
+NeverIdle combines CPU burner, memory allocator, disk writer, and network activity in a single cross-platform binary (Linux/macOS/Windows). It offers a realistic **Baseline Profile** as well as a system-adaptive **Smart Profile**. All workers include graceful shutdown, lock file protection, and priority controls to avoid impacting critical services.
 
 ---
 
-## Fitur Utama
+## Key Advantages
 
-- CPU load target + burst/rest pattern
-- Memory allocation (GiB) **atau** target persentase
-- Disk I/O burst terjadwal
-- Speedtest (bandwidth waste) dengan interval
-- Baseline web server + TLS ACME
+- **All-in-one**: CPU, memory, disk, and network in one binary.
+- **Adaptive**: auto pause/resume with hysteresis for CPU/memory.
+- **Realistic**: baseline profile with natural traffic/memory patterns.
+- **Safe**: graceful shutdown, lock file, and cgroup-aware limits.
+- **Portable**: Linux/macOS/Windows.
+- **Operational**: suitable for small to large VPS instances.
+
+---
+
+## Core Features
+
+- CPU target load with burst/rest pattern
+- Memory allocation (GiB) **or** percentage target
+- Scheduled disk I/O bursts
+- Periodic network speedtests or lightweight downloads
+- Baseline web server + ACME TLS
 - Maintenance scheduler (random compute/network/memory)
-- Smart profile: deteksi spesifikasi + target CPU/mem otomatis
+- Smart profile: auto-detect specs + CPU/memory targets
 - Priority tuning + lock file
 
 ---
 
 ## Quick Start
 
-### 1) Mode “Smart” (disarankan)
-Target **20–40% CPU** + **~30% memori** dan menampilkan spesifikasi VPS, plus network download ringan setiap 5–10 menit.
+### 1) Smart Mode (recommended)
+Targets **20–40% CPU** and **~30% memory**, displays system specs, and performs light network downloads every 5–10 minutes.
 
 ```bash
 ./NeverIdle -smart
 ```
 
-### 2) Mode Baseline (realistic footprint)
+### 2) Baseline Mode (realistic footprint)
 
 ```bash
 ./NeverIdle -baseline
 ```
 
-### 3) CPU + Memori + Network minimal
+### 3) Minimal CPU + Memory + Network
 
 ```bash
 ./NeverIdle -cp 20 -c 1s -m 2 -n 4h
@@ -80,36 +80,36 @@ Target **20–40% CPU** + **~30% memori** dan menampilkan spesifikasi VPS, plus 
 
 ---
 
-## Matriks Fitur
+## Feature Matrix
 
-| Komponen | Mode | Deskripsi | Default | Catatan |
+| Component | Mode | Description | Default | Notes |
 |---|---|---|---|---|
-| CPU | `-cp` + `-c` | Target CPU dengan burst/rest | 35% target (jika hanya `-cp`) | Bisa auto pause/resume dengan `-auto` |
-| CPU | `-baseline` | Pola burst 40–70% + cooldown/idle | Aktif di baseline | Realistic traffic footprint |
-| CPU | `-smart` | 20–40% CPU dengan auto pause/resume | Aktif di smart | Cocok semua VPS |
-| Memori | `-m` | Alokasi GiB tetap | Off | Tidak bisa dengan `-mp` |
-| Memori | `-mp` | Target persentase memori | Off | Cgroup-aware |
-| Memori | `-smart` | Target ~30% memori | Aktif di smart | Auto adjust |
-| Disk | `-d` + `-di` | Disk write burst (MiB/interval) | Off | `-path` untuk folder |
-| Network | `-n` | Speedtest periodik | Off | Perlu akses internet |
-| Network | `-network-mode` | `speedtest`, `speedtest-random`, `speedtest-worst`, `download` | `speedtest` | `download` untuk fetch file kecil |
-| Web | `-baseline` | Dummy web server | Port 8080 | Bisa TLS dengan ACME |
-| Scheduler | `-maintenance` | Random compute/network/memory | Off | Pattern natural |
+| CPU | `-cp` + `-c` | Target CPU with burst/rest | 35% target (when `-cp` used) | Auto pause/resume with `-auto` |
+| CPU | `-baseline` | Burst 40–70% + cooldown/idle | Enabled in baseline | Realistic traffic footprint |
+| CPU | `-smart` | 20–40% CPU with auto pause/resume | Enabled in smart | Safe on most VPS |
+| Memory | `-m` | Fixed GiB allocation | Off | Cannot combine with `-mp` |
+| Memory | `-mp` | Target memory percentage | Off | Cgroup-aware |
+| Memory | `-smart` | ~30% memory target | Enabled in smart | Auto-adjust |
+| Disk | `-d` + `-di` | Scheduled disk write burst | Off | `-path` for target dir |
+| Network | `-n` | Periodic speedtest | Off | Requires internet access |
+| Network | `-network-mode` | `speedtest`, `speedtest-random`, `speedtest-worst`, `download` | `speedtest` | `download` fetches small files |
+| Web | `-baseline` | Dummy web server | Port 8080 | TLS via ACME |
+| Scheduler | `-maintenance` | Random compute/network/memory | Off | Natural patterns |
 
 ---
 
-## Instalasi
+## Installation
 
-### Opsi A: Download release binary
-1. Buka halaman Releases: https://github.com/merisssas/nv/releases
-2. Download binary sesuai arsitektur (amd64/arm64).
-3. Jadikan executable:
+### Option A: Download release binary
+1. Open Releases: https://github.com/merisssas/nv/releases
+2. Download the binary for your architecture (amd64/arm64).
+3. Make it executable:
 
 ```bash
 chmod +x NeverIdle
 ```
 
-### Opsi B: Build dari source
+### Option B: Build from source
 
 ```bash
 git clone https://github.com/merisssas/nv.git
@@ -117,7 +117,7 @@ cd nv
 go build -o NeverIdle
 ```
 
-### Opsi C: Docker
+### Option C: Docker
 
 ```bash
 # ARM (default)
@@ -128,36 +128,36 @@ sudo docker build --build-arg ARCH=amd64 -t neveridle:latest .
 
 ---
 
-## Cara Pakai
+## Usage
 
-> **Catatan:** nilai persentase menggunakan angka bulat (contoh `20` berarti 20%).
+> **Note:** Percent values use whole numbers (e.g. `20` means 20%).
 
 ```bash
 ./NeverIdle -smart
 ```
 
-Saat program start, setiap worker akan menjalankan satu siklus awal agar kamu bisa langsung melihat efeknya.
+At startup, each worker runs an initial cycle so you can immediately observe the effect.
 
 ---
 
-## Profil & Preset
+## Profiles & Presets
 
 ### 1) Smart Profile (recommended)
-- Menampilkan spesifikasi CPU & memori
-- Target CPU 20–40% (burst pattern)
-- Target memori ~30%
-- Auto pause/resume aktif
-- **Note (EN):** Smart mode enables CPU + memory + light network download. Disk I/O runs only if you pass `-d` (and optionally `-di`/`-path`).
+- Prints CPU and memory specs
+- CPU target 20–40% (burst pattern)
+- Memory target ~30%
+- Auto pause/resume enabled
+- **Note:** Smart mode enables CPU + memory + light network download. Disk I/O runs only if you pass `-d` (and optionally `-di`/`-path`).
 
 ```bash
 ./NeverIdle -smart
 ```
 
 ### 2) Baseline Profile (realistic)
-- Dummy web server (`/` dan `/healthz`)
-- CPU burst 40–70% lalu cooldown/idle
-- Memory touch 300–800 MiB setiap 5–15 menit
-- Network faker (DNS + HTTP ringan)
+- Dummy web server (`/` and `/healthz`)
+- CPU burst 40–70% with cooldown/idle
+- Memory touch 300–800 MiB every 5–15 minutes
+- Network faker (DNS + light HTTP)
 
 ```bash
 ./NeverIdle -baseline
@@ -171,100 +171,161 @@ Saat program start, setiap worker akan menjalankan satu siklus awal agar kamu bi
 
 ---
 
-## Konfigurasi Lengkap (Flags)
+## Configuration (Flags)
 
 ### Smart Profile
-| Flag | Deskripsi | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `-smart` | Deteksi spesifikasi + target 20–40% CPU dan ~30% memori | Off |
+| `-smart` | Detect specs + target 20–40% CPU and ~30% memory | Off |
 
 ### CPU
-| Flag | Deskripsi | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `-cp` | Target CPU percent | 35% (jika `-cp` dipakai) |
-| `-c` | Interval kontrol CPU | 1s |
+| `-cp` | Target CPU percent | 35% (if `-cp` used) |
+| `-c` | CPU control interval | 1s |
 | `-auto` | Auto pause/resume CPU | Off |
-| `-auto-interval` | Interval auto check | 2s |
+| `-auto-interval` | Auto check interval | 2s |
 | `-auto-hyst` | Hysteresis percent | 2 |
 
 ### Memory
-| Flag | Deskripsi | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `-m` | Alokasi memori GiB tetap | Off |
-| `-mp` | Target persentase memori | Off |
+| `-m` | Fixed memory GiB | Off |
+| `-mp` | Target memory percent | Off |
 
-> `-m` dan `-mp` tidak bisa dipakai bersamaan.
+> `-m` and `-mp` cannot be used together.
 
 ### Network
-| Flag | Deskripsi | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `-n` | Interval speedtest (atau interval fixed untuk `download`) | Off |
+| `-n` | Speedtest interval (or fixed interval for `download`) | Off |
 | `-t` | Concurrent connections | 4 |
-| `-network-mode` | Mode network: `speedtest`, `speedtest-random`, `speedtest-worst`, `download` | `speedtest` |
-| `-n-min` | Interval minimum untuk `download` | 5m (smart) |
-| `-n-max` | Interval maksimum untuk `download` | 10m (smart) |
+| `-network-mode` | `speedtest`, `speedtest-random`, `speedtest-worst`, `download` | `speedtest` |
+| `-n-min` | Minimum interval for `download` | 5m (smart) |
+| `-n-max` | Maximum interval for `download` | 10m (smart) |
 
 ### Baseline Web Server
-| Flag | Deskripsi | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `-baseline` | Aktifkan baseline profile | Off |
+| `-baseline` | Enable baseline profile | Off |
 | `-web-addr` | Bind address | 0.0.0.0 |
-| `-web-port` | Port web server | 8080 |
-| `-web-tls` | TLS otomatis ACME | Off |
-| `-web-domain` | Domain TLS (wajib jika TLS) | "" |
+| `-web-port` | Web server port | 8080 |
+| `-web-tls` | Automatic ACME TLS | Off |
+| `-web-domain` | TLS domain (required for TLS) | "" |
 
 ### Disk
-| Flag | Deskripsi | Default |
+| Flag | Description | Default |
 |---|---|---|
 | `-d` | Disk write MiB per interval | Off |
-| `-di` | Interval disk write | 30m |
-| `-path` | Folder target disk write | current directory |
+| `-di` | Disk write interval | 30m |
+| `-path` | Target folder for disk writes | current directory |
 
 ### Maintenance + Safety
-| Flag | Deskripsi | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `-maintenance` | Scheduler randomized | Off |
+| `-maintenance` | Randomized scheduler | Off |
 | `-heartbeat-url` | Heartbeat URL | Off |
 | `-lock-file` | Lock file path | /tmp/neveridle.lock |
 | `-p` | Priority (0=normal, 19=lowest, 666=background) | 0 |
 
 ---
 
-## Tutorial Lengkap
+## Full Tutorial
 
-## Tips Tuning
+### Web Hosting Mode (Baseline Web Server)
 
-- Kalau CPU usage masih di bawah 20–25%, naikkan **burst percentage** (`-cp`) atau **durasi burst** di konfigurasi CPU (lihat `BurstMin/BurstMax` di `main.go`). 
-- Untuk VM besar (contoh 4 OCPU / 24 GB), pastikan memory waste tidak terlalu rendah: target **minimal 5–6 GiB stabil** dengan `-m 6` atau sesuaikan `-mp` agar konsumsi stabil. 
-- Untuk network ringan, gunakan `-network-mode download` agar melakukan download file kecil periodic (contoh 5–10 menit). 
+This mode runs a lightweight web server to keep your VPS “visible” at the HTTP layer. It is useful for:
 
-### 1) Menjaga VM tetap aktif (minimal)
+- basic health checks/load balancers,
+- monitoring endpoints (e.g. `/healthz`),
+- platforms that require an active web service.
+
+**Default behavior:**
+- Binds to `0.0.0.0:8080`.
+- Primary endpoints: `/` and `/healthz`.
+- Only runs when `-baseline` is enabled.
+
+**Basic usage (direct binary):**
+
+```bash
+./NeverIdle -baseline -web-port 8080
+```
+
+**Domain + automatic TLS (ACME, direct binary):**
+
+```bash
+./NeverIdle -baseline -web-tls -web-domain example.com
+```
+
+**Docker (manual):**
+
+```bash
+docker run -d --name neveridle \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  ghcr.io/merisssas/nv:latest -baseline -web-port 8080
+```
+
+**Docker + TLS (manual):**
+
+```bash
+docker run -d --name neveridle \
+  --restart unless-stopped \
+  -p 80:80 -p 443:443 \
+  ghcr.io/merisssas/nv:latest -baseline -web-tls -web-domain example.com
+```
+
+**Compose:**
+
+```yaml
+services:
+  neveridle:
+    image: ghcr.io/merisssas/nv:latest
+    container_name: neveridle
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    command: ["-baseline", "-web-port", "8080"]
+```
+
+**Important notes:**
+- Ensure ports 80/443 are open for ACME verification.
+- If another web server is running (Nginx/Caddy), use a different port (e.g. `-web-port 8081`) and proxy it.
+- This is a **dummy** web service for activity footprint only; it does not serve your application.
+
+### Tuning Tips
+
+- If CPU usage is below 20–25%, increase the **burst percentage** (`-cp`) or adjust burst durations in `main.go`.
+- For large VMs (e.g. 4 OCPU / 24 GB), ensure memory waste is not too low: use `-m 6` or adjust `-mp`.
+- For light network activity, use `-network-mode download` for periodic small downloads (e.g. 5–10 minutes).
+
+### 1) Keep VM active (minimal)
 
 ```bash
 ./NeverIdle -cp 20 -c 1s -m 2 -n 4h
 ```
 
-**Output yang diharapkan:** CPU stabil, memori alokasi tetap, dan speedtest berjalan tiap 4 jam.
+**Expected output:** Stable CPU, fixed memory allocation, and speedtest every 4 hours.
 
 ---
 
-### 2) Smart mode untuk semua jenis VPS
+### 2) Smart mode for any VPS
 
 ```bash
 ./NeverIdle -smart
 ```
 
-**Keunggulan:** deteksi spesifikasi otomatis, beban aman di kisaran 20–40% CPU.
+**Benefit:** automatic system detection with safe 20–40% CPU load.
 
 ---
 
-### 3) Baseline mode (profil realistis)
+### 3) Baseline mode (realistic profile)
 
 ```bash
 ./NeverIdle -baseline
 ```
 
-Jika ingin TLS:
+Enable TLS:
 
 ```bash
 ./NeverIdle -baseline -web-tls -web-domain example.com
@@ -280,18 +341,18 @@ Jika ingin TLS:
 
 ---
 
-### 5) Target persentase memori (auto)
+### 5) Auto pause/resume memory
 
 ```bash
-./NeverIdle -mp 60 -auto-interval 2s -auto-hyst 5
+./NeverIdle -mp 40 -auto -auto-interval 2s -auto-hyst 3
 ```
 
 ---
 
-### 6) Disk write burst
+### 6) Network mode (download)
 
 ```bash
-./NeverIdle -d 1024 -di 30m -path /var/tmp
+./NeverIdle -network-mode download -n-min 5m -n-max 10m
 ```
 
 ---
@@ -310,7 +371,7 @@ Optional heartbeat:
 
 ---
 
-### 8) Kombinasi “Prestige Waster” (komplit)
+### 8) “Prestige Waster” full stack
 
 ```bash
 ./NeverIdle \
@@ -321,7 +382,7 @@ Optional heartbeat:
   -p 666
 ```
 
-**Efek:** baseline + smart control + disk/network + prioritas rendah.
+**Effect:** baseline + smart control + disk/network + lowest priority.
 
 ---
 
@@ -337,21 +398,23 @@ docker build -t neveridle:latest .
 
 ### Run Container
 
+> **Note:** The image is **idle by default** to prevent accidental load. Pass `-smart` (CPU + memory + light network) or other flags as needed.
+
 ```bash
 docker run -d --name neveridle \
   --restart unless-stopped \
   neveridle:latest -smart
 ```
 
-### Contoh Lengkap (Manual → Docker → Compose)
+### Full Examples (Manual → Docker → Compose)
 
-#### Manual (binary langsung)
+#### Manual (direct binary)
 
 ```bash
-# Smart (CPU + memori)
+# Smart (CPU + memory)
 ./NeverIdle -smart
 
-# Baseline (web + cpu + memory touch + network faker)
+# Baseline (web + CPU + memory touch + network faker)
 ./NeverIdle -baseline
 
 # Custom manual (CPU + mem + network + disk)
@@ -382,31 +445,26 @@ services:
 
 ---
 
-## Praktik Terbaik
+## Best Practices
 
-- Gunakan `-smart` untuk semua jenis VPS agar stabil & adaptif.
-- Gunakan `-auto` jika VPS menjalankan workload lain.
-- Untuk disk write, selalu arahkan ke volume yang aman (`/var/tmp`).
-- Jika memakai TLS, pastikan port 80/443 terbuka.
-- Jalankan di `tmux`/`screen` agar proses tetap aktif.
+- Use `-smart` for stable, adaptive behavior on most VPS instances.
+- Use `-auto` when the VPS is running other workloads.
+- Route disk writes to safe volumes (e.g. `/var/tmp`).
+- If using TLS, ensure ports 80/443 are open.
+- Run inside `tmux`/`screen` to keep the process alive.
 
 ---
 
 ## Troubleshooting
 
-- **Program keluar segera:** tidak ada worker yang diaktifkan. Gunakan `-smart`, `-baseline`, atau minimal `-cp`/`-m`/`-mp`/`-n`/`-d`.
-- **TLS tidak jalan:** domain tidak resolve atau port 80/443 tertutup.
-- **Speedtest gagal:** cek akses outbound ke Ookla SpeedTest.
-- **RAM terasa penuh:** kurangi `-mp` atau gunakan `-auto`.
+- **Program exits immediately:** no workers enabled. Use `-smart`, `-baseline`, or at least one of `-cp`/`-m`/`-mp`/`-n`/`-d`.
+- **TLS not working:** domain not resolving or ports 80/443 closed.
+- **Speedtest failing:** check outbound access to Ookla Speedtest.
 
 ---
 
-## Keamanan & Catatan Penting
+## Security & Notes
 
-- Gunakan beban sesuai kapasitas VM agar tidak mengganggu layanan inti.
-- Jangan jalankan multiple instance tanpa `-lock-file` yang berbeda.
-- Untuk environment sensitif, hindari network speedtest.
-
----
-
-**NeverIdle = prestige waster terbaik untuk VM/VPS yang selalu terlihat hidup.**
+- NeverIdle is designed for controlled resource usage. Always match settings to your provider policies and workload tolerance.
+- Do not run it on environments where synthetic resource consumption violates terms of service.
+- Use lock files to prevent multiple concurrent instances.
