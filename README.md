@@ -60,7 +60,7 @@ NeverIdle combines CPU burner, memory allocator, disk writer, and network activi
 ## Quick Start
 
 ### 1) Smart Mode (recommended)
-Targets **20–40% CPU** and **~30% memory**, displays system specs, and performs light network downloads every 5–10 minutes.
+Targets **20–40% CPU** and **~30% memory**, displays system specs, and runs a worst-server speedtest every 4 hours.
 
 ```bash
 ./NeverIdle -smart
@@ -91,8 +91,8 @@ Targets **20–40% CPU** and **~30% memory**, displays system specs, and perform
 | Memory | `-mp` | Target memory percentage | Off | Cgroup-aware |
 | Memory | `-smart` | ~30% memory target | Enabled in smart | Auto-adjust |
 | Disk | `-d` + `-di` | Scheduled disk write burst | Off | `-path` for target dir |
-| Network | `-n` | Periodic speedtest | Off | Requires internet access |
-| Network | `-network-mode` | `speedtest`, `speedtest-random`, `speedtest-worst`, `download` | `speedtest` | `download` fetches small files |
+| Network | `-n` | Periodic speedtest | Off (Smart: 4h) | Requires internet access |
+| Network | `-network-mode` | `speedtest`, `speedtest-random`, `speedtest-worst`, `download` | `speedtest` (Smart: `speedtest-worst`) | `download` fetches small files |
 | Web | `-baseline` | Dummy web server | Port 8080 | TLS via ACME |
 | Scheduler | `-maintenance` | Random compute/network/memory | Off | Natural patterns |
 
@@ -198,11 +198,11 @@ At startup, each worker runs an initial cycle so you can immediately observe the
 ### Network
 | Flag | Description | Default |
 |---|---|---|
-| `-n` | Speedtest interval (or fixed interval for `download`) | Off |
+| `-n` | Speedtest interval (or fixed interval for `download`) | Off (Smart: 4h) |
 | `-t` | Concurrent connections | 4 |
-| `-network-mode` | `speedtest`, `speedtest-random`, `speedtest-worst`, `download` | `speedtest` |
-| `-n-min` | Minimum interval for `download` | 5m (smart) |
-| `-n-max` | Maximum interval for `download` | 10m (smart) |
+| `-network-mode` | `speedtest`, `speedtest-random`, `speedtest-worst`, `download` | `speedtest` (Smart: `speedtest-worst`) |
+| `-n-min` | Minimum interval for `download` | 5m (Smart if `-network-mode download`) |
+| `-n-max` | Maximum interval for `download` | 10m (Smart if `-network-mode download`) |
 
 ### Baseline Web Server
 | Flag | Description | Default |
