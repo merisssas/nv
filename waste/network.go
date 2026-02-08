@@ -3,12 +3,25 @@ package waste
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/showwin/speedtest-go/speedtest"
 )
 
+type SpeedtestMode string
+
+const (
+	SpeedtestBest   SpeedtestMode = "best"
+	SpeedtestRandom SpeedtestMode = "random"
+	SpeedtestWorst  SpeedtestMode = "worst"
+)
+
 func Network(ctx context.Context, interval time.Duration, connectionCount int) {
+	NetworkSpeedtest(ctx, interval, connectionCount, SpeedtestBest)
+}
+
+func NetworkSpeedtest(ctx context.Context, interval time.Duration, connectionCount int, mode SpeedtestMode) {
 	if interval <= 0 {
 		interval = 45 * time.Minute
 	}
@@ -18,12 +31,13 @@ func Network(ctx context.Context, interval time.Duration, connectionCount int) {
 		interval = minInterval
 	}
 
-	fmt.Println("[NETWORK] Starting Network Waste Worker...")
+	fmt.Printf("[NETWORK] Starting Network Waste Worker (mode=%s)...\n", mode)
 	if connectionCount > 0 {
 		fmt.Printf("[NETWORK] Target connections: %d (best-effort, library default may apply)\n", connectionCount)
 	}
 
 	client := speedtest.New()
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	user, err := client.FetchUserInfo()
 	if err != nil {
@@ -55,16 +69,14 @@ func Network(ctx context.Context, interval time.Duration, connectionCount int) {
 			continue
 		}
 
-		targets, err := serverList.FindServer([]int{})
-		if err != nil || len(targets) == 0 {
+		server, err := pickSpeedtestServer(serverList, mode, rng)
+		if err != nil {
 			fmt.Println("[NETWORK] No servers found.")
 			cancel()
 			failures++
 			sleepWithBackoff(interval, failures, baseBackoff, maxBackoff)
 			continue
 		}
-
-		server := targets[0]
 		fmt.Printf("[NETWORK] Testing against: %s (%s)\n", server.Sponsor, server.Name)
 
 		err = server.PingTest(nil)
@@ -100,6 +112,46 @@ func Network(ctx context.Context, interval time.Duration, connectionCount int) {
 		} else {
 			sleepWithBackoff(interval, failures, baseBackoff, maxBackoff)
 		}
+	}
+}
+
+func pickSpeedtestServer(servers speedtest.Servers, mode SpeedtestMode, rng *rand.Rand) (*speedtest.Server, error) {
+	if len(servers) == 0 {
+		return nil, speedtest.ErrServerNotFound
+	}
+
+	switch mode {
+	case SpeedtestRandom:
+		available := servers.Available()
+		pool := servers
+		if available != nil && len(*available) > 0 {
+			pool = *available
+		}
+		return pool[rng.Intn(len(pool))], nil
+	case SpeedtestWorst:
+		available := servers.Available()
+		pool := servers
+		if available != nil && len(*available) > 0 {
+			pool = *available
+		}
+		if len(pool) == 0 {
+			return nil, speedtest.ErrServerNotFound
+		}
+		start := len(pool) * 3 / 4
+		if start >= len(pool) {
+			start = len(pool) - 1
+		}
+		if start < 0 {
+			start = 0
+		}
+		worstPool := pool[start:]
+		return worstPool[rng.Intn(len(worstPool))], nil
+	default:
+		targets, err := servers.FindServer([]int{})
+		if err != nil || len(targets) == 0 {
+			return nil, speedtest.ErrServerNotFound
+		}
+		return targets[0], nil
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,6 +31,9 @@ var (
 
 	FlagNetwork                = flag.Duration("n", 0, "Interval for network speed test (e.g. 45m)")
 	FlagNetworkConnectionCount = flag.Int("t", 4, "Concurrent connections for speedtest")
+	FlagNetworkMode            = flag.String("network-mode", "speedtest", "Network waste mode: speedtest|speedtest-random|speedtest-worst|download")
+	FlagNetworkMinInterval     = flag.Duration("n-min", 0, "Minimum interval for network download mode (e.g. 5m)")
+	FlagNetworkMaxInterval     = flag.Duration("n-max", 0, "Maximum interval for network download mode (e.g. 10m)")
 	FlagBaseline               = flag.Bool("baseline", false, "Enable baseline workload (web server + cpu bump + memory touch + network faker)")
 	FlagWebAddr                = flag.String("web-addr", "0.0.0.0", "Address for baseline web server")
 	FlagWebPort                = flag.Int("web-port", 8080, "Port for baseline web server")
@@ -73,6 +77,17 @@ func applySmartDefaults() {
 	}
 	if !*FlagAutoMode {
 		*FlagAutoMode = true
+	}
+	if *FlagNetworkMode == "speedtest" && *FlagNetwork == 0 && *FlagNetworkMinInterval == 0 && *FlagNetworkMaxInterval == 0 {
+		*FlagNetworkMode = "download"
+	}
+	if *FlagNetworkMode == "download" {
+		if *FlagNetworkMinInterval == 0 {
+			*FlagNetworkMinInterval = 5 * time.Minute
+		}
+		if *FlagNetworkMaxInterval == 0 {
+			*FlagNetworkMaxInterval = 10 * time.Minute
+		}
 	}
 }
 
@@ -292,10 +307,33 @@ func main() {
 	}
 
 	// --- 4. Network Waste ---
-	if *FlagNetwork != 0 {
+	networkMode := strings.ToLower(*FlagNetworkMode)
+	networkEnabled := *FlagNetwork != 0
+	if networkMode == "download" {
+		networkEnabled = true
+	}
+	if networkEnabled {
 		nothingEnabled = false
-		fmt.Printf("[MAIN] Starting Network Waste every %v (conns=%d)\n", *FlagNetwork, *FlagNetworkConnectionCount)
-		go waste.Network(ctx, *FlagNetwork, *FlagNetworkConnectionCount)
+		switch networkMode {
+		case "download":
+			minInterval := *FlagNetworkMinInterval
+			maxInterval := *FlagNetworkMaxInterval
+			if *FlagNetwork != 0 {
+				minInterval = *FlagNetwork
+				maxInterval = *FlagNetwork
+			}
+			fmt.Printf("[MAIN] Starting Network Download Waste (interval=%v-%v)\n", minInterval, maxInterval)
+			go waste.NetworkDownload(ctx, minInterval, maxInterval, nil)
+		case "speedtest-random":
+			fmt.Printf("[MAIN] Starting Network Speedtest (random server) every %v (conns=%d)\n", *FlagNetwork, *FlagNetworkConnectionCount)
+			go waste.NetworkSpeedtest(ctx, *FlagNetwork, *FlagNetworkConnectionCount, waste.SpeedtestRandom)
+		case "speedtest-worst":
+			fmt.Printf("[MAIN] Starting Network Speedtest (worst random) every %v (conns=%d)\n", *FlagNetwork, *FlagNetworkConnectionCount)
+			go waste.NetworkSpeedtest(ctx, *FlagNetwork, *FlagNetworkConnectionCount, waste.SpeedtestWorst)
+		default:
+			fmt.Printf("[MAIN] Starting Network Speedtest every %v (conns=%d)\n", *FlagNetwork, *FlagNetworkConnectionCount)
+			go waste.NetworkSpeedtest(ctx, *FlagNetwork, *FlagNetworkConnectionCount, waste.SpeedtestBest)
+		}
 		fmt.Println("====================")
 	}
 

@@ -60,7 +60,7 @@ NeverIdle menggabungkan CPU burner, memory allocator, disk writer, dan network a
 ## Quick Start
 
 ### 1) Mode “Smart” (disarankan)
-Target **20–40% CPU** + **~30% memori** dan menampilkan spesifikasi VPS.
+Target **20–40% CPU** + **~30% memori** dan menampilkan spesifikasi VPS, plus network download ringan setiap 5–10 menit.
 
 ```bash
 ./NeverIdle -smart
@@ -92,6 +92,7 @@ Target **20–40% CPU** + **~30% memori** dan menampilkan spesifikasi VPS.
 | Memori | `-smart` | Target ~30% memori | Aktif di smart | Auto adjust |
 | Disk | `-d` + `-di` | Disk write burst (MiB/interval) | Off | `-path` untuk folder |
 | Network | `-n` | Speedtest periodik | Off | Perlu akses internet |
+| Network | `-network-mode` | `speedtest`, `speedtest-random`, `speedtest-worst`, `download` | `speedtest` | `download` untuk fetch file kecil |
 | Web | `-baseline` | Dummy web server | Port 8080 | Bisa TLS dengan ACME |
 | Scheduler | `-maintenance` | Random compute/network/memory | Off | Pattern natural |
 
@@ -146,7 +147,7 @@ Saat program start, setiap worker akan menjalankan satu siklus awal agar kamu bi
 - Target CPU 20–40% (burst pattern)
 - Target memori ~30%
 - Auto pause/resume aktif
-- **Note (EN):** Smart mode only enables CPU + memory. Disk I/O runs only if you pass `-d` (and optionally `-di`/`-path`).
+- **Note (EN):** Smart mode enables CPU + memory + light network download. Disk I/O runs only if you pass `-d` (and optionally `-di`/`-path`).
 
 ```bash
 ./NeverIdle -smart
@@ -197,8 +198,11 @@ Saat program start, setiap worker akan menjalankan satu siklus awal agar kamu bi
 ### Network
 | Flag | Deskripsi | Default |
 |---|---|---|
-| `-n` | Interval speedtest | Off |
+| `-n` | Interval speedtest (atau interval fixed untuk `download`) | Off |
 | `-t` | Concurrent connections | 4 |
+| `-network-mode` | Mode network: `speedtest`, `speedtest-random`, `speedtest-worst`, `download` | `speedtest` |
+| `-n-min` | Interval minimum untuk `download` | 5m (smart) |
+| `-n-max` | Interval maksimum untuk `download` | 10m (smart) |
 
 ### Baseline Web Server
 | Flag | Deskripsi | Default |
@@ -227,6 +231,12 @@ Saat program start, setiap worker akan menjalankan satu siklus awal agar kamu bi
 ---
 
 ## Tutorial Lengkap
+
+## Tips Tuning
+
+- Kalau CPU usage masih di bawah 20–25%, naikkan **burst percentage** (`-cp`) atau **durasi burst** di konfigurasi CPU (lihat `BurstMin/BurstMax` di `main.go`). 
+- Untuk VM besar (contoh 4 OCPU / 24 GB), pastikan memory waste tidak terlalu rendah: target **minimal 5–6 GiB stabil** dengan `-m 6` atau sesuaikan `-mp` agar konsumsi stabil. 
+- Untuk network ringan, gunakan `-network-mode download` agar melakukan download file kecil periodic (contoh 5–10 menit). 
 
 ### 1) Menjaga VM tetap aktif (minimal)
 
