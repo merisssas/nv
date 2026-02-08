@@ -79,7 +79,8 @@ func applySmartDefaults() {
 		*FlagAutoMode = true
 	}
 	if *FlagNetworkMode == "speedtest" && *FlagNetwork == 0 && *FlagNetworkMinInterval == 0 && *FlagNetworkMaxInterval == 0 {
-		*FlagNetworkMode = "download"
+		*FlagNetworkMode = "speedtest-worst"
+		*FlagNetwork = 4 * time.Hour
 	}
 	if *FlagNetworkMode == "download" {
 		if *FlagNetworkMinInterval == 0 {

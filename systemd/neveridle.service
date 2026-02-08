@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/neveridle -maintenance -baseline
+ExecStart=/usr/local/bin/neveridle -maintenance
 Restart=on-failure
 RestartSec=5s
 Environment=GOMAXPROCS=0

@@ -147,7 +147,7 @@ At startup, each worker runs an initial cycle so you can immediately observe the
 - CPU target 20–40% (burst pattern)
 - Memory target ~30%
 - Auto pause/resume enabled
-- **Note:** Smart mode enables CPU + memory + light network download. Disk I/O runs only if you pass `-d` (and optionally `-di`/`-path`).
+- **Note:** Smart mode enables CPU + memory + network speedtest (worst server) every 4 hours. Disk I/O runs only if you pass `-d` (and optionally `-di`/`-path`).
 
 ```bash
 ./NeverIdle -smart
@@ -315,7 +315,7 @@ services:
 ./NeverIdle -smart
 ```
 
-**Benefit:** automatic system detection with safe 20–40% CPU load.
+**Benefit:** automatic system detection with safe 20–40% CPU load, plus memory and speedtest (worst server) every 4 hours.
 
 ---
 
